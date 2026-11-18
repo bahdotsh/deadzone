@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dead Zone</title>
+<link rel="stylesheet" href="/base.css">
+<style>
+  body { padding: 14px; height: 100vh; display: flex; flex-direction: column; gap: 12px; }
+  header { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+  header p { margin: 0; color: var(--dim); font-size: 14px; }
+  .stage { flex: 1; min-height: 0; display: grid; gap: 12px; grid-template-columns: 350px 340px 340px minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr); }
+  figure { margin: 0; display: flex; flex-direction: column; min-height: 0; }
+  figcaption { font: 600 11px/1 var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--dim);
+    padding: 0 2px 7px; }
+  iframe { flex: 1; width: 100%; border: 1px solid var(--line); border-radius: 14px; background: var(--bg); }
+  @media (max-width: 1250px) {
+    body { height: auto; }
+    .stage { flex: none; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); grid-template-rows: none; }
+    .map { grid-column: 1 / -1; }
+    iframe { flex: none; height: 700px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Dead Zone</h1>
+  <p>A truck with no signal, the driver's phone, a stranger's phone, and the office. The phones talk to the truck
+     over the Offline Protocol SDK, end-to-end encrypted. The office is an ordinary website.</p>
+</header>
+<div class="stage">
+  <figure class="truck"><figcaption>1. The truck, in a dead zone</figcaption><iframe id="unit" title="The truck"></iframe></figure>
+  <figure><figcaption>2. The driver's phone, paired</figcaption><iframe id="phone" title="The driver's phone"></iframe></figure>
+  <figure><figcaption>3. A stranger's phone, in range</figcaption><iframe id="stranger" title="A stranger's phone"></iframe></figure>
+  <figure class="map"><figcaption>4. The office</figcaption><iframe id="map" title="The office map" src="/"></iframe></figure>
+</div>
+<script>
+const ports = new URLSearchParams(location.search);
+for (const id of ["unit", "phone", "stranger"]) {
+  const port = Number(ports.get(id));
+  if (Number.isInteger(port) && port > 0 && port < 65536) {
+    document.getElementById(id).src = `http://${location.hostname}:${port}/`;
+  }
+}
+</script>
+</body>
+</html>

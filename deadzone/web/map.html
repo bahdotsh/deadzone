@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fleet map</title>
+<link rel="stylesheet" href="/base.css">
+<style>
+  main { max-width: 1100px; margin: 0 auto; }
+  svg { display: block; width: 100%; height: auto; }
+  #map { background: #0f171c; border-radius: 10px; }
+  .road { fill: none; stroke: #2c3a44; stroke-width: 10; stroke-linejoin: round; stroke-linecap: round; }
+  .road-mid { fill: none; stroke: #3d4f5c; stroke-width: 1.5; stroke-dasharray: 6 9; }
+  .trail { fill: none; stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; }
+  .trail.live { stroke: var(--ok); } .trail.carried { stroke: var(--held); }
+  .truck { fill: var(--text); stroke: var(--bg); stroke-width: 3; }
+  .label { font: 600 17px var(--mono); fill: var(--text); paint-order: stroke; stroke: #0f171c; stroke-width: 5px; }
+  .label.dim { fill: var(--dim); font-weight: 400; font-size: 14px; }
+  .legend { display: flex; gap: 18px; flex-wrap: wrap; font-size: 13px; color: var(--dim); }
+  .legend i { display: inline-block; width: 22px; height: 4px; border-radius: 2px; vertical-align: middle; margin-right: 6px; }
+  .cols { display: grid; grid-template-columns: 2.2fr 1fr; gap: 14px; align-items: start; }
+  @media (max-width: 760px) { .cols { grid-template-columns: 1fr; } }
+  .temp-line { fill: none; stroke: var(--text); stroke-width: 1.5; }
+  .limit { stroke: var(--bad); stroke-width: 1; stroke-dasharray: 4 4; }
+  .axis { font: 11px var(--mono); fill: var(--dim); }
+  #arrivals li { display: block; padding: 8px 0; border-top: 1px solid var(--line); font-size: 13px; }
+  #arrivals li:first-child { border-top: 0; }
+  #arrivals b { font-family: var(--mono); }
+</style>
+</head>
+<body>
+<main class="stack">
+  <div class="row">
+    <div><div class="kicker">The office</div><h1 style="white-space:nowrap">Fleet map</h1></div>
+    <span class="badge dim" id="fresh">No readings yet</span>
+  </div>
+
+  <div class="cols">
+    <section class="panel stack">
+      <svg id="map" viewBox="0 0 800 500" role="img" aria-label="The road, and every reading that has reached the office"></svg>
+      <div class="legend">
+        <span><i style="background:var(--ok)"></i>arrived as it was taken</span>
+        <span><i style="background:var(--held)"></i>waited on the truck, then carried in by a phone</span>
+        <span><i style="background:#3d4f5c"></i>the road</span>
+      </div>
+    </section>
+
+    <div class="stack">
+      <div class="stats">
+        <div class="stat"><b id="count">0</b><span>readings on the map</span></div>
+        <div class="stat"><b id="carried">0</b><span>arrived late, by phone</span></div>
+      </div>
+      <section class="panel">
+        <div class="kicker" style="margin-bottom:8px">Cold box temperature</div>
+        <svg id="temp" viewBox="0 0 300 110" role="img" aria-label="Cold box temperature over the readings received"></svg>
+      </section>
+      <section class="panel">
+        <div class="kicker" style="margin-bottom:4px">Arrivals</div>
+        <ul class="list" id="arrivals"></ul>
+      </section>
+    </div>
+  </div>
+</main>
+<script src="/base.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+const W = 800, H = 500, PAD = 46;
+// A reading that reached the office more than this long after it was taken was carried.
+const LATE = 6;
+let project = null;
+
+function projector(road) {
+  const lats = road.map((p) => p[0]), lons = road.map((p) => p[1]);
+  const [minLat, maxLat, minLon, maxLon] = [Math.min(...lats), Math.max(...lats), Math.min(...lons), Math.max(...lons)];
+  const squash = Math.cos(((minLat + maxLat) / 2) * Math.PI / 180);
+  const spanX = (maxLon - minLon) * squash, spanY = maxLat - minLat;
+  const scale = Math.min((W - 2 * PAD) / spanX, (H - 2 * PAD) / spanY);
+  const offX = (W - spanX * scale) / 2, offY = (H - spanY * scale) / 2;
+  return (lat, lon) => [offX + (lon - minLon) * squash * scale, H - offY - (lat - minLat) * scale];
+}
+
+const path = (points) => points.map(([x, y], i) => `${i ? "L" : "M"}${x.toFixed(1)} ${y.toFixed(1)}`).join("");
+
+// Consecutive readings of one kind become one stroke; a gap in the numbers breaks it.
+function trails(points) {
+  const runs = [];
+  let run = null, previous = null;
+  for (const [seq, ts, lat, lon, , arrived] of points) {
+    const kind = arrived - ts > LATE ? "carried" : "live";
+    const xy = project(lat, lon);
+    const joined = previous && seq === previous.seq + 1;
+    if (!run || !joined || kind !== run.kind) {
+      run = { kind, xy: joined ? [previous.xy, xy] : [xy] };
+      runs.push(run);
+    } else {
+      run.xy.push(xy);
+    }
+    previous = { seq, xy };
+  }
+  return runs.map((r) => r.xy.length > 1
+    ? `<path class="trail ${r.kind}" d="${path(r.xy)}"/>`
+    : `<circle r="2.5" cx="${r.xy[0][0].toFixed(1)}" cy="${r.xy[0][1].toFixed(1)}" fill="var(--${r.kind === "live" ? "ok" : "held"})"/>`).join("");
+}
+
+function temperature(points) {
+  const recent = points.slice(-400);
+  if (recent.length < 2) return '<text class="axis" x="0" y="60">Waiting for readings.</text>';
+  const lo = 2, hi = 9, limit = 8, x0 = 30, x1 = 296, y0 = 8, y1 = 96;
+  const y = (t) => y1 - ((Math.min(hi, Math.max(lo, t)) - lo) / (hi - lo)) * (y1 - y0);
+  const line = recent.map((p, i) => [x0 + (i / (recent.length - 1)) * (x1 - x0), y(p[4])]);
+  return `<line class="limit" x1="${x0}" x2="${x1}" y1="${y(limit)}" y2="${y(limit)}"/>` +
+    `<text class="axis" x="0" y="${y(limit) + 4}">${limit}°C</text>` +
+    `<text class="axis" x="0" y="${y(4) + 4}">4°C</text>` +
+    `<path class="temp-line" d="${path(line)}"/>` +
+    `<text class="axis" x="${x1}" y="108" text-anchor="end">last ${recent.length} readings, limit dashed</text>`;
+}
+
+let snapshot = null;
+function render() {
+  const s = snapshot;
+  if (!s) return;
+  project = project || projector(s.road);
+  const road = s.road.map(([lat, lon]) => project(lat, lon));
+  let svg = `<path class="road" d="${path(road)}Z"/><path class="road-mid" d="${path(road)}Z"/>`;
+  const all = s.units.flatMap((u) => u.points);
+  const now = Date.now() / 1000;
+  for (const unit of s.units) {
+    svg += trails(unit.points);
+    const latest = unit.points[unit.points.length - 1];
+    if (!latest) continue;
+    const [x, y] = project(latest[2], latest[3]);
+    const left = x > W - 260;
+    svg += `<circle class="truck" r="7" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}"/>` +
+      `<text class="label" x="${(left ? x - 14 : x + 14).toFixed(1)}" y="${(y - 4).toFixed(1)}" text-anchor="${left ? "end" : "start"}">${esc(unit.name)}</text>` +
+      `<text class="label dim" x="${(left ? x - 14 : x + 14).toFixed(1)}" y="${(y + 15).toFixed(1)}" text-anchor="${left ? "end" : "start"}">last known ${span(now - latest[1])} ago</text>`;
+  }
+  if (!all.length) {
+    svg += `<text class="label dim" x="${W / 2}" y="${H / 2}" text-anchor="middle">No truck has reported. Nothing has reached the office.</text>`;
+  }
+  $("map").innerHTML = svg;
+  $("count").textContent = s.units.reduce((n, u) => n + u.count, 0);
+  $("carried").textContent = all.filter((p) => p[5] - p[1] > LATE).length;
+  const newest = all.reduce((best, p) => Math.max(best, p[1]), 0);
+  const age = now - newest;
+  $("fresh").textContent = !all.length ? "No readings yet" : age < LATE ? "Live" : `Newest: ${span(age)} old`;
+  $("fresh").className = "badge " + (!all.length ? "dim" : age < LATE ? "ok" : "held");
+  $("temp").innerHTML = temperature(s.units.length ? s.units[0].points : []);
+  $("arrivals").innerHTML = s.arrivals.length ? s.arrivals.slice(0, 6).map((a) =>
+    `<li><time class="sub mono">${clock(a.at)}</time><br><b>${plural(a.count, "reading")}</b> from ${esc(a.unit)}, uploaded by ${esc(a.via)}` +
+    (a.oldest_wait > LATE ? `<br><span style="color:var(--held)">the oldest waited ${span(a.oldest_wait)}</span>` : "") + "</li>").join("")
+    : '<li class="empty">Nothing has arrived.</li>';
+}
+watch((s) => { snapshot = s; render(); });
+setInterval(render, 1000);  // "last known ... ago" keeps counting between arrivals
+</script>
+</body>
+</html>

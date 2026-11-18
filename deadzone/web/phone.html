@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Phone</title>
+<link rel="stylesheet" href="/base.css">
+<style>
+  main { max-width: 360px; margin: 0 auto; border: 2px solid var(--line); border-radius: 34px; padding: 18px 16px 20px;
+    background: #10171c; }
+  .notch { width: 96px; height: 6px; border-radius: 3px; background: var(--line); margin: 0 auto 14px; }
+  .switches { display: grid; gap: 8px; }
+</style>
+</head>
+<body>
+<main class="stack">
+  <div class="notch"></div>
+  <div class="row">
+    <div><div class="kicker">Phone</div><h1 id="name">&nbsp;</h1></div>
+    <span class="badge" id="uplink">&nbsp;</span>
+  </div>
+
+  <section class="panel">
+    <div class="kicker">Carrying</div>
+    <div class="big" id="carrying">0</div>
+    <div class="sub" id="carrying-note">&nbsp;</div>
+  </section>
+
+  <section class="panel">
+    <div class="kicker" style="margin-bottom:4px">Trackers</div>
+    <ul class="list" id="units"></ul>
+  </section>
+
+  <div class="switches">
+    <button class="switch" id="range" hidden><span id="range-label"></span><span class="badge" id="range-badge"></span></button>
+    <button class="switch" id="online"><span id="online-label"></span><span class="badge" id="online-badge"></span></button>
+  </div>
+
+  <section class="panel">
+    <div class="kicker" style="margin-bottom:6px">What happened</div>
+    <ul class="feed" id="feed"></ul>
+  </section>
+</main>
+<script src="/base.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+let last = null;
+$("online").onclick = () => last && act({ online: !last.online });
+$("range").onclick = () => last && act({ range: !last.in_range });
+watch((s) => {
+  last = s;
+  document.title = s.name;
+  $("name").textContent = s.name;
+  $("uplink").textContent = s.online ? "Uplink on" : "No uplink";
+  $("uplink").className = "badge " + (s.online ? "ok" : "bad");
+  $("carrying").textContent = s.carrying;
+  $("carrying").className = "big " + (s.carrying > 3 ? "held" : "ok");
+  $("carrying-note").textContent = s.stored === 0 ? "No readings pulled yet"
+    : s.carrying > 3 ? `${plural(s.carrying, "reading")} stored on this phone, waiting for an uplink`
+    : `All ${s.uploaded} readings it pulled are on the map`;
+  $("units").innerHTML = s.units.length ? s.units.map((u) => {
+    const state = u.refused ? ["bad", "bad", "Refused"]
+      : u.nearby ? ["ok", "ok", "In range"] : ["", "dim", "Away"];
+    return `<li><span><i class="dot ${state[0]}"></i>${esc(u.name)}<br><span class="sub mono">${u.refused ? "this phone is not paired" : plural(u.stored, "reading") + " pulled"}</span></span>` +
+      `<span class="badge ${state[1]}">${state[2]}</span></li>`;
+  }).join("") : '<li class="empty">No tracker nearby.</li>';
+  $("online-label").textContent = s.online ? "Turn the uplink off" : "Turn the uplink on";
+  $("online-badge").textContent = s.online ? "On" : "Off";
+  $("online-badge").className = "badge " + (s.online ? "ok" : "bad");
+  $("range").hidden = s.in_range === null;
+  if (s.in_range !== null) {
+    $("range-label").textContent = s.in_range ? "Walk away from the truck" : "Walk back to the truck";
+    $("range-badge").textContent = s.in_range ? "In range" : "Out of range";
+    $("range-badge").className = "badge " + (s.in_range ? "ok" : "dim");
+  }
+  $("feed").innerHTML = feedHtml(s.feed.slice(0, 7));
+});
+</script>
+</body>
+</html>

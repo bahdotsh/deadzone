@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tracker unit</title>
+<link rel="stylesheet" href="/base.css">
+<style>
+  main { max-width: 380px; margin: 0 auto; }
+  .reading { display: grid; grid-template-columns: 1.6fr 1fr 1fr; gap: 8px; }
+  .reading b { font: 600 13px var(--mono); }
+  .reading span { display: block; color: var(--dim); font-size: 11px; line-height: 1.6; }
+</style>
+</head>
+<body>
+<main class="stack">
+  <div class="row">
+    <div><div class="kicker">Tracker unit</div><h1 id="name">&nbsp;</h1></div>
+    <span class="badge bad" title="This device has no SIM and no Wi-Fi">No uplink</span>
+  </div>
+
+  <section class="panel">
+    <div class="kicker">Held on the device</div>
+    <div class="big" id="held">0</div>
+    <div class="sub" id="held-note">&nbsp;</div>
+  </section>
+
+  <div class="stats">
+    <div class="stat"><b id="logged">0</b><span>readings logged</span></div>
+    <div class="stat"><b id="handed">0</b><span>handed to a phone</span></div>
+  </div>
+
+  <section class="panel">
+    <div class="kicker" style="margin-bottom:10px">Latest reading</div>
+    <div class="reading">
+      <div><span>position</span><b id="pos">&ndash;</b></div>
+      <div><span>cold box</span><b id="temp">&ndash;</b></div>
+      <div><span>number</span><b id="seq">&ndash;</b></div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="kicker" style="margin-bottom:4px">Phones it can hear</div>
+    <ul class="list" id="collectors"></ul>
+  </section>
+
+  <section class="panel">
+    <div class="kicker" style="margin-bottom:6px">What happened</div>
+    <ul class="feed" id="feed"></ul>
+  </section>
+</main>
+<script src="/base.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+watch((s) => {
+  document.title = s.name;
+  $("name").textContent = s.name;
+  $("held").textContent = s.held;
+  $("held").className = "big " + (s.held > 3 ? "held" : "ok");
+  $("held-note").textContent = s.held > 3
+    ? `${span(s.held * s.interval)} of readings, waiting for a paired phone`
+    : "A paired phone is taking readings as they are logged";
+  $("logged").textContent = s.logged;
+  $("handed").textContent = s.handed;
+  if (s.latest) {
+    const [seq, , lat, lon, temp] = s.latest;
+    $("pos").textContent = `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
+    $("temp").textContent = `${temp.toFixed(1)} °C`;
+    $("seq").textContent = `#${seq}`;
+  }
+  $("collectors").innerHTML = s.collectors.length ? s.collectors.map((c) => {
+    const state = !c.paired ? ["bad", "bad", "Refused"]
+      : c.nearby ? ["ok", "ok", "In range"] : ["", "dim", "Away"];
+    return `<li><span><i class="dot ${state[0]}"></i>${esc(c.name)}<br><span class="sub">${c.paired ? "paired" : "not paired"}</span></span>` +
+      `<span class="badge ${state[1]}">${state[2]}</span></li>`;
+  }).join("") : `<li class="empty">${s.pairing ? "Pairing: the first phone to come near will be trusted." : "None yet."}</li>`;
+  $("feed").innerHTML = feedHtml(s.feed.slice(0, 8));
+});
+</script>
+</body>
+</html>
